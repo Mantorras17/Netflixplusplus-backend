@@ -1,17 +1,27 @@
-package org.example;
+package org.netflixpp;
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
+import org.eclipse.jetty.server.Server;
+import org.glassfish.jersey.jetty.JettyHttpContainerFactory;
+import org.glassfish.jersey.server.ResourceConfig;
+
+import java.net.URI;
+
 public class Main {
     public static void main(String[] args) {
-        //TIP Press <shortcut actionId="ShowIntentionActions"/> with your caret at the highlighted text
-        // to see how IntelliJ IDEA suggests fixing it.
-        System.out.printf("Hello and welcome!");
+        ResourceConfig config = new ResourceConfig();
+        config.packages("org.netflixpp.api"); // Scan dos endpoints
 
-        for (int i = 1; i <= 5; i++) {
-            //TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-            // for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-            System.out.println("i = " + i);
+        Server server = JettyHttpContainerFactory.createServer(
+                URI.create("http://localhost:8080/"), config
+        );
+
+        try {
+            System.out.println("🚀 Netflix++ Backend running on http://localhost:8080");
+            server.start();
+            server.join();
+        } catch (Exception e) {
+            System.err.println("❌ Server error: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }
