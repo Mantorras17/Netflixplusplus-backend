@@ -1,0 +1,27 @@
+version: '3.1'
+
+services:
+  mariadb:
+    image: mariadb:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: netflixppdb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  cassandra:
+    image: cassandra:latest
+    environment:
+      - CASSANDRA_CLUSTER_NAME=NetflixCluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+volumes:
+  mariadb-data:
+  cassandra-data:

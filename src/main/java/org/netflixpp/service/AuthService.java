@@ -1,34 +1,55 @@
 package org.netflixpp.service;
 
+import org.netflixpp.config.MariaDBConfig;
 import org.netflixpp.model.User;
-import java.util.HashMap;
-import java.util.Map;
+import org.netflixpp.util.JWTUtil;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 
 public class AuthService {
-    // Simulação de base de dados em memória (depois substitui por DB real)
-    private Map<String, User> users = new HashMap<>();
 
-    public AuthService() {
-        // Utilizador de teste
-        users.put("admin", new User(1, "admin", "password", "admin@netflixpp.com"));
-    }
-
-    public boolean authenticate(String username, String password) {
-        User user = users.get(username);
-        return user != null && user.getPassword().equals(password);
-    }
-
-    public boolean register(User newUser) {
-        if (users.containsKey(newUser.getUsername())) {
-            return false; // Utilizador já existe
+    public String login(String username, String password) throws Exception {
+        try (Connection conn = MariaDBConfig.getConnection();
+             PreparedStatement st = conn.prepareStatement("SELECT id, username, password, role, email FROM users WHERE username = ?")) {
+            st.setString(1, username);
+            try (ResultSet rs = st.executeQuery()) {
+                if (!rs.next()) return null;
+                String pw = rs.getString("password");
+                // Aqui estamos a comparar plain-text; em produção compara hashes.
+                if (!password.equals(pw)) return null;
+                String role = rs.getString("role");
+                return JWTUtil.generateToken(username, role);
+            }
         }
-
-        newUser.setId(users.size() + 1);
-        users.put(newUser.getUsername(), newUser);
-        return true;
     }
 
-    public User getUserByUsername(String username) {
-        return users.get(username);
+    public boolean register(String username, String password, String role, String email) throws Exception {
+        try (Connection conn = MariaDBConfig.getConnection();
+             PreparedStatement st = conn.prepareStatement("INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)")) {
+            st.setString(1, username);
+            st.setString(2, password);
+            st.setString(3, role == null ? "user" : role);
+            st.setString(4, email);
+            st.executeUpdate();
+            return true;
+        } catch (Exception e) {
+            // possivelmente username duplicado -> false
+            return false;
+        }
+    }
+
+    public User getUserByUsername(String username) throws Exception {
+        try (Connection conn = MariaDBConfig.getConnection();
+             PreparedStatement st = conn.prepareStatement("SELECT id, username, password, role, email FROM users WHERE username = ?")) {
+            st.setString(1, username);
+            try (ResultSet rs = st.executeQuery()) {
+                if (rs.next()) {
+                    return new User(rs.getInt("id"), rs.getString("username"), rs.getString("password"), rs.getString("role"), rs.getString("email"));
+                }
+            }
+        }
+        return null;
     }
 }
