@@ -1,95 +1,62 @@
 package org.netflixpp.service;
 
-import org.netflixpp.config.ServerConfig;
-import org.netflixpp.mesh.ChunkManager;
-import org.netflixpp.mesh.MeshConstants;
-
-import jakarta.ws.rs.core.Response;
+import org.netflixpp.config.Config;
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.file.*;
+import java.util.*;
 
 public class MeshService {
-    private final ChunkManager chunkManager = new ChunkManager();
-    private final Map<String, String> activePeers = new HashMap<>(); // peerId -> address
 
-    public Response getChunkList(String movieId) {
+    private final Map<String, List<String>> activePeers = new HashMap<>();
+
+    public Map<String, Object> getChunkInfo(String movieId) {
+        Map<String, Object> info = new HashMap<>();
+        info.put("movieId", movieId);
+
         try {
-            Map<String, Object> response = new HashMap<>();
-            response.put("movieId", movieId);
-
-            // Get chunk information from ChunkManager
-            List<Map<String, Object>> chunks = chunkManager.getChunkInfo(movieId);
-            response.put("chunks", chunks);
-            response.put("totalChunks", chunks.size());
-            response.put("chunkSize", MeshConstants.CHUNK_SIZE);
-
-            return Response.ok(response).build();
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity("{\"error\":\"Error getting chunk list: " + e.getMessage() + "\"}")
-                    .build();
-        }
-    }
-
-    public Response getChunk(String movieId, int chunkIndex) {
-        try {
-            Path chunkPath = Paths.get(ServerConfig.getStoragePath(), "chunks", movieId,
-                    "chunk_" + chunkIndex + ".bin");
-            File chunkFile = chunkPath.toFile();
-
-            if (!chunkFile.exists()) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("{\"error\":\"Chunk not found\"}")
-                        .build();
+            Path chunksDir = Paths.get(Config.CHUNKS_DIR, movieId);
+            if (!Files.exists(chunksDir)) {
+                info.put("chunks", new ArrayList<>());
+                info.put("count", 0);
+                return info;
             }
 
-            return Response.ok(chunkFile)
-                    .header("Content-Type", "application/octet-stream")
-                    .header("Content-Disposition", "attachment; filename=\"chunk_" + chunkIndex + ".bin\"")
-                    .build();
+            List<String> chunks = new ArrayList<>();
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(chunksDir, "*.bin")) {
+                for (Path chunk : stream) {
+                    chunks.add(chunk.getFileName().toString());
+                }
+            }
+
+            info.put("chunks", chunks);
+            info.put("count", chunks.size());
+            info.put("chunkSize", Config.CHUNK_SIZE);
 
         } catch (Exception e) {
-            return Response.serverError()
-                    .entity("{\"error\":\"Error serving chunk: " + e.getMessage() + "\"}")
-                    .build();
+            info.put("error", e.getMessage());
         }
+
+        return info;
     }
 
-    public Response getActivePeers() {
-        try {
-            Map<String, Object> response = new HashMap<>();
-            response.put("peers", new ArrayList<>(activePeers.values()));
-            response.put("count", activePeers.size());
-            return Response.ok(response).build();
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity("{\"error\":\"Error getting peers: " + e.getMessage() + "\"}")
-                    .build();
-        }
+    public Map<String, Object> getActivePeers() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("peers", new ArrayList<>(activePeers.keySet()));
+        response.put("count", activePeers.size());
+        return response;
     }
 
-    public Response registerPeer(String peerInfo) {
-        try {
-            // Simple peer registration
-            // In a real implementation, parse peerInfo JSON and store peer details
-            String peerId = "peer_" + System.currentTimeMillis();
-            activePeers.put(peerId, peerInfo);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("peerId", peerId);
-            response.put("status", "registered");
-            response.put("totalPeers", activePeers.size());
-
-            return Response.ok(response).build();
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity("{\"error\":\"Error registering peer: " + e.getMessage() + "\"}")
-                    .build();
+    public void registerPeer(String peerId, String address, String chunks) {
+        List<String> peerInfo = new ArrayList<>();
+        peerInfo.add(address);
+        if (chunks != null) {
+            peerInfo.add(chunks);
         }
+        activePeers.put(peerId, peerInfo);
+    }
+
+    public File getChunk(String movieId, int chunkIndex) {
+        Path chunkPath = Paths.get(Config.CHUNKS_DIR, movieId, "chunk_" + chunkIndex + ".bin");
+        return chunkPath.toFile();
     }
 }

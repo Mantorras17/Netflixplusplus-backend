@@ -12,8 +12,8 @@ java {
     }
 }
 
-the<ApplicationPluginConvention>().apply {
-    mainClassName = "org.netflixpp.Main"
+application {
+    mainClass.set("org.netflixpp.Main")
 }
 
 
