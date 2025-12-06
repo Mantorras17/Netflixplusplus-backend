@@ -3,7 +3,6 @@ package org.netflixpp.controller;
 import jakarta.ws.rs.Path;
 import org.netflixpp.model.Movie;
 import org.netflixpp.service.MovieService;
-import org.netflixpp.util.JWTUtil;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;

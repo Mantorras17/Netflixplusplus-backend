@@ -3,13 +3,13 @@ package org.netflixpp.controller;
 import org.netflixpp.service.AdminService;
 import org.netflixpp.util.JWTUtil;
 import org.glassfish.jersey.media.multipart.FormDataParam;
-import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.InputStream;
 import java.util.Map;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 @Path("/admin")
 public class AdminController {
@@ -57,7 +57,7 @@ public class AdminController {
                                 String body) {
         if (!isAdmin(token)) return Response.status(403).entity("{\"error\":\"forbidden\"}").build();
         try {
-            Map<String,Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, Map.class);
+            Map<String,Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, new TypeReference<Map<String,Object>>(){});
             service.updateMovie(id,
                     (String)m.get("title"),
                     (String)m.get("description"),
@@ -116,8 +116,8 @@ public class AdminController {
     public Response createUser(@HeaderParam("Authorization") String token, String body) {
         if (!isAdmin(token)) return Response.status(403).build();
         try {
-            Map<String,String> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, Map.class);
-            service.createUser(m.get("username"), m.get("password"), m.get("role"), m.get("email"));
+            Map<String,Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, new TypeReference<Map<String,Object>>(){});
+            service.createUser((String)m.get("username"), (String)m.get("password"), (String)m.get("role"), (String)m.get("email"));
             return Response.ok("{\"status\":\"created\"}").build();
         } catch (Exception e) {
             return Response.serverError().entity("{\"error\":\""+e.getMessage()+"\"}").build();
@@ -131,8 +131,8 @@ public class AdminController {
     public Response updateUser(@HeaderParam("Authorization") String token, @PathParam("id") int id, String body) {
         if (!isAdmin(token)) return Response.status(403).build();
         try {
-            Map<String,String> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, Map.class);
-            service.updateUser(id, m.get("username"), m.get("password"), m.get("role"), m.get("email"));
+            Map<String,Object> m = new com.fasterxml.jackson.databind.ObjectMapper().readValue(body, new TypeReference<Map<String,Object>>(){});
+            service.updateUser(id, (String)m.get("username"), (String)m.get("password"), (String)m.get("role"), (String)m.get("email"));
             return Response.ok("{\"status\":\"updated\"}").build();
         } catch (Exception e) {
             return Response.serverError().entity("{\"error\":\""+e.getMessage()+"\"}").build();
