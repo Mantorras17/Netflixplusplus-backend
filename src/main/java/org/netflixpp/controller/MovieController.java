@@ -1,14 +1,11 @@
 package org.netflixpp.controller;
 
-import jakarta.ws.rs.Path;
-import org.netflixpp.model.Movie;
+import org.netflixpp.service.AuthService;
 import org.netflixpp.service.MovieService;
-
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
-import java.io.*;
-import java.nio.file.*;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Path("/movies")
 public class MovieController {
@@ -17,12 +14,86 @@ public class MovieController {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response listAll() {
+    public Response getAllMovies(
+            @QueryParam("page") @DefaultValue("1") int page,
+            @QueryParam("limit") @DefaultValue("20") int limit,
+            @QueryParam("sort") @DefaultValue("newest") String sort) {
+
         try {
-            List<Movie> movies = movieService.listMovies();
+            List<Map<String, Object>> movies;
+
+            switch (sort) {
+                case "title":
+                    movies = movieService.getAllMovies().stream()
+                            .sorted((a, b) -> ((String) a.get("title"))
+                                    .compareToIgnoreCase((String) b.get("title")))
+                            .collect(Collectors.toList());
+                    break;
+                case "year":
+                    movies = movieService.getAllMovies().stream()
+                            .sorted((a, b) -> ((Integer) b.get("year"))
+                                    .compareTo((Integer) a.get("year")))
+                            .collect(Collectors.toList());
+                    break;
+                case "views":
+                    // Ordenar por visualizações (se houver)
+                    movies = movieService.getAllMovies();
+                    break;
+                default: // newest
+                    movies = movieService.getAllMovies();
+            }
+
+            // Paginação
+            int start = (page - 1) * limit;
+            int end = Math.min(start + limit, movies.size());
+
+            if (start >= movies.size()) {
+                return Response.ok(new ArrayList<>()).build();
+            }
+
+            List<Map<String, Object>> paginated = movies.subList(start, end);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("movies", paginated);
+            response.put("page", page);
+            response.put("limit", limit);
+            response.put("total", movies.size());
+            response.put("pages", (int) Math.ceil((double) movies.size() / limit));
+
+            return Response.ok(response).build();
+
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/featured")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getFeaturedMovies() {
+        try {
+            List<Map<String, Object>> movies = movieService.getFeaturedMovies();
             return Response.ok(movies).build();
         } catch (Exception e) {
-            return Response.serverError().entity("{\"error\":\""+e.getMessage()+"\"}").build();
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/recent")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getRecentMovies(@QueryParam("limit") @DefaultValue("10") int limit) {
+        try {
+            List<Map<String, Object>> movies = movieService.getRecentMovies(limit);
+            return Response.ok(movies).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 
@@ -31,67 +102,163 @@ public class MovieController {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getMovie(@PathParam("id") int id) {
         try {
-            List<Movie> all = movieService.listMovies();
-            for (Movie m : all) if (m.getId() == id) return Response.ok(m).build();
-            return Response.status(404).entity("{\"error\":\"not_found\"}").build();
+            Map<String, Object> movie = movieService.getMovieWithDetails(id);
+            if (movie == null) {
+                return Response.status(404)
+                        .entity(Map.of("error", "Movie not found"))
+                        .build();
+            }
+            return Response.ok(movie).build();
         } catch (Exception e) {
-            return Response.serverError().entity("{\"error\":\""+e.getMessage()+"\"}").build();
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 
-    // stream: /movies/{id}/stream?res=1080 or res=360
     @GET
-    @Path("/{id}/stream")
-    public Response streamMovie(@PathParam("id") int id, @QueryParam("res") @DefaultValue("1080") String res,
-                                @HeaderParam("Range") String range) {
+    @Path("/{id}/stream-info")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getMovieStreamInfo(@PathParam("id") int id) {
         try {
-            Movie movie = movieService.listMovies().stream().filter(m -> m.getId() == id).findFirst().orElse(null);
-            if (movie == null) return Response.status(404).entity("{\"error\":\"not_found\"}").build();
-
-            String path = "1080".equals(res) || "1080p".equals(res) ? movie.getFilePath1080() : movie.getFilePath360();
-            Path file = (Path) Paths.get(path);
-            if (!Files.exists((java.nio.file.Path) file)) return Response.status(404).entity("{\"error\":\"file_not_found\"}").build();
-
-            long length = Files.size((java.nio.file.Path) file);
-            long from = 0, to = length - 1;
-            if (range != null && range.startsWith("bytes=")) {
-                String[] parts = range.substring(6).split("-");
-                from = Long.parseLong(parts[0]);
-                if (parts.length > 1 && !parts[1].isEmpty()) to = Long.parseLong(parts[1]);
+            Map<String, Object> movie = movieService.getMovieById(id);
+            if (movie == null) {
+                return Response.status(404)
+                        .entity(Map.of("error", "Movie not found"))
+                        .build();
             }
-            if (from < 0) from = 0;
-            if (to >= length) to = length - 1;
-            long contentLength = to - from + 1;
 
-            final RandomAccessFile raf = new RandomAccessFile(((java.nio.file.Path) file).toFile(), "r");
-            raf.seek(from);
-            StreamingOutput stream = output -> {
-                byte[] buf = new byte[4096];
-                long remaining = contentLength;
-                try (OutputStream out = output) {
-                    int read;
-                    while (remaining > 0 && (read = raf.read(buf, 0, (int)Math.min(buf.length, remaining))) != -1) {
-                        out.write(buf, 0, read);
-                        remaining -= read;
-                    }
-                    out.flush();
-                } finally {
-                    raf.close();
-                }
-            };
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", id);
+            response.put("title", movie.get("title"));
+            response.put("availableQualities", Arrays.asList("360p", "1080p"));
+            response.put("duration", movie.get("duration"));
+            response.put("hasChunks", movie.get("filePath1080") != null);
 
-            Response.ResponseBuilder rb = Response.status(range == null ? 200 : 206)
-                    .entity(stream)
-                    .header("Accept-Ranges", "bytes")
-                    .header("Content-Length", String.valueOf(contentLength))
-                    .header("Content-Type", "video/mp4");
-            if (range != null) {
-                rb.header("Content-Range", String.format("bytes %d-%d/%d", from, to, length));
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/search")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response searchMovies(@QueryParam("q") String query) {
+        try {
+            List<Map<String, Object>> results = movieService.searchMovies(query);
+            return Response.ok(results).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/category/{category}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getMoviesByCategory(@PathParam("category") String category) {
+        try {
+            List<Map<String, Object>> movies = movieService.getMoviesByCategory(category);
+            return Response.ok(movies).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/genre/{genre}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getMoviesByGenre(@PathParam("genre") String genre) {
+        try {
+            List<Map<String, Object>> movies = movieService.getMoviesByGenre(genre);
+            return Response.ok(movies).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/categories")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAllCategories() {
+        try {
+            List<String> categories = movieService.getAllCategories();
+            return Response.ok(categories).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/genres")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getAllGenres() {
+        try {
+            List<String> genres = movieService.getAllGenres();
+            return Response.ok(genres).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @GET
+    @Path("/statistics")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getStatistics() {
+        try {
+            Map<String, Object> stats = movieService.getMovieStatistics();
+            return Response.ok(stats).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @POST
+    @Path("/{id}/view")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response recordView(
+            @PathParam("id") int movieId,
+            @HeaderParam("Authorization") String authHeader) {
+
+        try {
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return Response.status(401)
+                        .entity(Map.of("error", "Unauthorized"))
+                        .build();
             }
-            return rb.build();
+
+            String token = authHeader.substring(7);
+            Map<String, Object> user = new AuthService().getUserByToken(token);
+
+            if (user == null) {
+                return Response.status(401)
+                        .entity(Map.of("error", "Invalid user"))
+                        .build();
+            }
+
+            int userId = (int) user.get("id");
+            movieService.recordMovieView(movieId, userId);
+
+            return Response.ok(Map.of("status", "View recorded")).build();
 
         } catch (Exception e) {
-            return Response.serverError().entity("{\"error\":\""+e.getMessage()+"\"}").build();
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
         }
     }
 }

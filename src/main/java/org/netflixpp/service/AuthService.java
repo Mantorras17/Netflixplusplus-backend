@@ -1,53 +1,99 @@
 package org.netflixpp.service;
 
-import org.netflixpp.config.MariaDBConfig;
-import org.netflixpp.model.User;
+import org.netflixpp.config.DbConfig;
 import org.netflixpp.util.JWTUtil;
-
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+import java.sql.*;
+import java.util.*;
 
 public class AuthService {
 
-    public String login(String username, String password) throws Exception {
-        try (Connection conn = MariaDBConfig.getConnection();
-             PreparedStatement st = conn.prepareStatement("SELECT id, username, password, role, email FROM users WHERE username = ?")) {
-            st.setString(1, username);
-            try (ResultSet rs = st.executeQuery()) {
-                if (!rs.next()) return null;
-                String pw = rs.getString("password");
-                // Aqui estamos a comparar plain-text; em produção compara hashes.
-                if (!password.equals(pw)) return null;
+    public String login(String username, String password) throws SQLException {
+        try (Connection conn = DbConfig.getMariaDB();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT id, username, role FROM users WHERE username = ? AND password = ?")) {
+
+            stmt.setString(1, username);
+            stmt.setString(2, password); // Em produção usar hash!
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
                 String role = rs.getString("role");
                 return JWTUtil.generateToken(username, role);
             }
         }
+        return null;
     }
 
-    public boolean register(String username, String password, String role, String email) throws Exception {
-        try (Connection conn = MariaDBConfig.getConnection();
-             PreparedStatement st = conn.prepareStatement("INSERT INTO users (username, password, role, email) VALUES (?, ?, ?, ?)")) {
-            st.setString(1, username);
-            st.setString(2, password);
-            st.setString(3, role == null ? "user" : role);
-            st.setString(4, email);
-            st.executeUpdate();
-            return true;
-        } catch (Exception e) {
-            // possivelmente username duplicado -> false
-            return false;
+    public boolean register(String username, String password, String email) throws SQLException {
+        try (Connection conn = DbConfig.getMariaDB();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "INSERT INTO users (username, password, email) VALUES (?, ?, ?)")) {
+
+            stmt.setString(1, username);
+            stmt.setString(2, password);
+            stmt.setString(3, email != null ? email : "");
+
+            return stmt.executeUpdate() > 0;
+
+        } catch (SQLException e) {
+            if (e.getMessage().contains("Duplicate")) {
+                return false;
+            }
+            throw e;
         }
     }
 
-    public User getUserByUsername(String username) throws Exception {
-        try (Connection conn = MariaDBConfig.getConnection();
-             PreparedStatement st = conn.prepareStatement("SELECT id, username, password, role, email FROM users WHERE username = ?")) {
-            st.setString(1, username);
-            try (ResultSet rs = st.executeQuery()) {
-                if (rs.next()) {
-                    return new User(rs.getInt("id"), rs.getString("username"), rs.getString("password"), rs.getString("role"), rs.getString("email"));
-                }
+    public boolean changePassword(String username, String oldPassword, String newPassword) throws SQLException {
+        try (Connection conn = DbConfig.getMariaDB();
+             PreparedStatement checkStmt = conn.prepareStatement(
+                     "SELECT id FROM users WHERE username = ? AND password = ?");
+             PreparedStatement updateStmt = conn.prepareStatement(
+                     "UPDATE users SET password = ? WHERE username = ? AND password = ?")) {
+
+            // Verificar senha antiga
+            checkStmt.setString(1, username);
+            checkStmt.setString(2, oldPassword);
+            ResultSet rs = checkStmt.executeQuery();
+
+            if (!rs.next()) {
+                return false; // Senha antiga incorreta
+            }
+
+            // Atualizar senha
+            updateStmt.setString(1, newPassword);
+            updateStmt.setString(2, username);
+            updateStmt.setString(3, oldPassword);
+
+            return updateStmt.executeUpdate() > 0;
+        }
+    }
+
+    public boolean resetPassword(String email) throws SQLException {
+        // Em produção: enviar email com link de reset
+        // Por enquanto apenas log
+        System.out.println("Password reset requested for email: " + email);
+        return true;
+    }
+
+    public Map<String, Object> getUserByToken(String token) throws SQLException {
+        String username = JWTUtil.getUsername(token);
+        if (username == null) return null;
+
+        try (Connection conn = DbConfig.getMariaDB();
+             PreparedStatement stmt = conn.prepareStatement(
+                     "SELECT id, username, role, email, created_at FROM users WHERE username = ?")) {
+
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                Map<String, Object> user = new HashMap<>();
+                user.put("id", rs.getInt("id"));
+                user.put("username", rs.getString("username"));
+                user.put("role", rs.getString("role"));
+                user.put("email", rs.getString("email"));
+                user.put("createdAt", rs.getTimestamp("created_at"));
+                return user;
             }
         }
         return null;

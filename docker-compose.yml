@@ -1,56 +1,60 @@
-version: '3.9'
+version: '3.8'
 
 services:
   mariadb:
-    image: mariadb:latest
-    container_name: mariadb_netflixpp
+    image: mariadb:10.11
+    container_name: netflixpp-mariadb
     environment:
       MYSQL_ROOT_PASSWORD: admin
-      MYSQL_DATABASE: netflixppdb
+      MYSQL_DATABASE: netflixpp
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
     ports:
       - "3306:3306"
     volumes:
-      - mariadb-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - mariadb_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - netflixpp-network
 
   cassandra:
-    image: cassandra:latest
-    container_name: cassandra_netflixpp
-    environment:
-      - CASSANDRA_CLUSTER_NAME=NetflixCluster
-      - CASSANDRA_DC=DC1
-      - CASSANDRA_RACK=Rack1
+    image: cassandra:4.1
+    container_name: netflixpp-cassandra
     ports:
       - "9042:9042"
-    volumes:
-      - cassandra-data:/var/lib/cassandra
-    depends_on:
-      - mariadb
-
-  backend:
-    build: .
-    container_name: backend_netflixpp
-    restart: always
     environment:
-      MARIADB_HOST: mariadb
-      MARIADB_PORT: 3306
+      CASSANDRA_CLUSTER_NAME: NetflixPPCluster
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    networks:
+      - netflixpp-network
+
+  app:
+    build: .
+    container_name: netflixpp-backend
+    ports:
+      - "8080:8080"
+      - "9001:9001"  # Porta do P2P
+    environment:
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      DB_NAME: netflixpp
+      DB_USER: admin
+      DB_PASS: admin
       CASSANDRA_HOST: cassandra
       CASSANDRA_PORT: 9042
-    ports:
-      - "80:80"
-      - "5000:5000"
-      - "9001:9001"
     volumes:
       - ./storage:/app/storage
-      - ./logs:/app/logs
     depends_on:
-      mariadb:
-        condition: service_healthy
+      - mariadb
+      - cassandra
+    networks:
+      - netflixpp-network
 
 volumes:
-  mariadb-data:
-  cassandra-data:
+  mariadb_data:
+  cassandra_data:
+
+networks:
+  netflixpp-network:
+    driver: bridge
