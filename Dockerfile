@@ -1,14 +1,11 @@
-FROM maven:3.8.4-openjdk-11 AS build
+FROM gradle:7.6-jdk17 AS build
 WORKDIR /app
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
+COPY . .
+RUN gradle build -x test --no-daemon
 
-FROM openjdk:11-jre-slim
+FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-COPY --from=build /app/storage ./storage
 RUN mkdir -p /app/storage/movies /app/storage/chunks /app/storage/temp
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-EXPOSE 8080 9001
+COPY --from=build /app/build/libs/*.jar app.jar
+EXPOSE 8080 9001 9002
 ENTRYPOINT ["java", "-jar", "app.jar"]

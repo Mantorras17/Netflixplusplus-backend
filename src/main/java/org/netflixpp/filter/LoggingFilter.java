@@ -14,7 +14,7 @@ public class LoggingFilter implements ContainerRequestFilter, ContainerResponseF
         String ip = request.getHeaderString("X-Forwarded-For");
         if (ip == null) ip = request.getHeaderString("Remote-Addr");
 
-        System.out.printf("▶️ %s %s from %s%n", method, path, ip);
+        System.out.printf("%s %s from %s%n", method, path, ip);
     }
 
     @Override
@@ -24,7 +24,7 @@ public class LoggingFilter implements ContainerRequestFilter, ContainerResponseF
         int status = response.getStatus();
         String username = (String) request.getProperty("username");
 
-        System.out.printf("◀️ %s %s -> %d (user: %s)%n",
+        System.out.printf("%s %s -> %d (user: %s)%n",
                 method, path, status, username != null ? username : "anonymous");
     }
 }

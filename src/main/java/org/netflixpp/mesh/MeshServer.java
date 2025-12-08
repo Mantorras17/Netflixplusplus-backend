@@ -30,7 +30,7 @@ public class MeshServer {
         server.setExecutor(Executors.newFixedThreadPool(10));
         server.start();
 
-        System.out.println("🌐 Mesh HTTP Server started on port " + Config.P2P_PORT);
+        System.out.println("Mesh HTTP Server started on port " + Config.P2P_PORT);
     }
 
     public void stop() {

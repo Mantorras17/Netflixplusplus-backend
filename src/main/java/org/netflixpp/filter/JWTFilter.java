@@ -14,18 +14,23 @@ import java.io.IOException;
 public class JWTFilter implements ContainerRequestFilter {
 
     private static final String[] PUBLIC_PATHS = {
-            "/auth/",
-            "/movies",
-            "/mesh/chunks/"
+            "auth/",
+            "movies",
+            "mesh/chunks/",
+            "mesh/peers",
+            "mesh/health"
     };
 
     @Override
     public void filter(ContainerRequestContext ctx) throws IOException {
         String path = ctx.getUriInfo().getPath();
+        System.out.println("JWTFilter DEBUG - Request path: " + path);
 
         // Verificar se é endpoint público
         for (String publicPath : PUBLIC_PATHS) {
+            System.out.println("  Checking: " + path + ".startsWith(" + publicPath + ") = " + path.startsWith(publicPath));
             if (path.startsWith(publicPath)) {
+                System.out.println("  -> Allowed (public path)");
                 return;
             }
         }

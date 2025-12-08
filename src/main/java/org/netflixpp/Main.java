@@ -9,30 +9,29 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
-import jakarta.ws.rs.core.UriBuilder;
-import java.net.URI;
+
 
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        System.out.println("🚀 Starting Netflix++ Backend...");
+        System.out.println("Starting Netflix++ Backend...");
 
         // Inicializar banco de dados
-        System.out.println("📊 Initializing database...");
+        System.out.println("Initializing database...");
         initializeDatabase();
 
         // Criar diretórios de storage
         createStorageDirectories();
 
         // Iniciar servidores Mesh
-        System.out.println("🌐 Starting Mesh servers...");
+        System.out.println("Starting Mesh servers...");
         startMeshServers();
 
         // Iniciar servidor HTTP principal
-        System.out.println("🌐 Starting HTTP server...");
+        System.out.println("Starting HTTP server...");
         startHttpServer();
 
-        System.out.println("✅ Netflix++ Backend started successfully!");
+        System.out.println("Netflix++ Backend started successfully!");
         System.out.println("   HTTP API: http://localhost:" + Config.HTTP_PORT);
         System.out.println("   Mesh HTTP: http://localhost:" + Config.P2P_PORT);
         System.out.println("   Mesh TCP:  port " + (Config.P2P_PORT + 1));
@@ -85,11 +84,12 @@ public class Main {
             stmt.execute("INSERT IGNORE INTO users (username, password, role, email) " +
                     "VALUES ('user', 'user123', 'user', 'user@netflixpp.com')");
 
-            System.out.println("✅ Database initialized");
+            System.out.println("Database initialized");
 
         } catch (Exception e) {
-            System.err.println("❌ Database initialization failed: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("Database initialization failed: " + e.getMessage());
+            System.err.println("   Server will continue running but database features may not work");
+            System.err.println("   Start MariaDB with: docker-compose up -d mariadb cassandra");
         }
     }
 
@@ -99,9 +99,9 @@ public class Main {
             java.nio.file.Files.createDirectories(java.nio.file.Paths.get(Config.MOVIES_DIR));
             java.nio.file.Files.createDirectories(java.nio.file.Paths.get(Config.CHUNKS_DIR));
             java.nio.file.Files.createDirectories(java.nio.file.Paths.get(Config.TEMP_DIR));
-            System.out.println("✅ Storage directories created");
+            System.out.println("Storage directories created");
         } catch (Exception e) {
-            System.err.println("❌ Failed to create storage directories: " + e.getMessage());
+            System.err.println("Failed to create storage directories: " + e.getMessage());
         }
     }
 
@@ -111,9 +111,9 @@ public class Main {
             try {
                 MeshServer meshServer = new MeshServer();
                 meshServer.start();
-                System.out.println("✅ Mesh HTTP Server started on port " + Config.P2P_PORT);
+                System.out.println("Mesh HTTP Server started on port " + Config.P2P_PORT);
             } catch (Exception e) {
-                System.err.println("❌ Mesh HTTP Server failed: " + e.getMessage());
+                System.err.println("Mesh HTTP Server failed: " + e.getMessage());
                 e.printStackTrace();
             }
         });
@@ -125,9 +125,9 @@ public class Main {
             try {
                 P2PServer p2pServer = new P2PServer();
                 p2pServer.start();
-                System.out.println("✅ P2P TCP Server started on port " + (Config.P2P_PORT + 1));
+                System.out.println("P2P TCP Server started on port " + (Config.P2P_PORT + 1));
             } catch (Exception e) {
-                System.err.println("❌ P2P TCP Server failed: " + e.getMessage());
+                System.err.println("P2P TCP Server failed: " + e.getMessage());
                 e.printStackTrace();
             }
         });
@@ -165,36 +165,41 @@ public class Main {
             config.register(org.glassfish.jersey.media.multipart.MultiPartFeature.class);
 
             // Configurar Jetty Server
-            Server server = new Server(Config.HTTP_PORT);
-            ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
-            context.setContextPath("/");
-            server.setHandler(context);
-
-            // Configurar Jersey Servlet
-            ServletHolder jerseyServlet = new ServletHolder(new ServletContainer(config));
-            jerseyServlet.setInitOrder(0);
-            context.addServlet(jerseyServlet, "/api/*");
-
-            // Iniciar servidor em thread separada
-            Thread serverThread = new Thread(() -> {
-                try {
-                    server.start();
-                    System.out.println("✅ HTTP Server started on port " + Config.HTTP_PORT);
-                    server.join();
-                } catch (Exception e) {
-                    System.err.println("❌ HTTP Server failed: " + e.getMessage());
-                    e.printStackTrace();
-                }
-            });
-            serverThread.setDaemon(true);
+            Thread serverThread = getThread(config);
             serverThread.start();
 
             // Dar tempo para o servidor iniciar
             Thread.sleep(1000);
 
         } catch (Exception e) {
-            System.err.println("❌ Failed to start HTTP server: " + e.getMessage());
+            System.err.println("Failed to start HTTP server: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private static Thread getThread(ResourceConfig config) {
+        Server server = new Server(Config.HTTP_PORT);
+        ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
+        context.setContextPath("/");
+        server.setHandler(context);
+
+        // Configurar Jersey Servlet
+        ServletHolder jerseyServlet = new ServletHolder(new ServletContainer(config));
+        jerseyServlet.setInitOrder(0);
+        context.addServlet(jerseyServlet, "/api/*");
+
+        // Iniciar servidor em thread separada
+        Thread serverThread = new Thread(() -> {
+            try {
+                server.start();
+                System.out.println("HTTP Server started on port " + Config.HTTP_PORT);
+                server.join();
+            } catch (Exception e) {
+                System.err.println("HTTP Server failed: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        serverThread.setDaemon(true);
+        return serverThread;
     }
 }

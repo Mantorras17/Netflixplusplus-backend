@@ -36,7 +36,7 @@ public class Config {
         new File(MOVIES_DIR).mkdirs();
         new File(CHUNKS_DIR).mkdirs();
         new File(TEMP_DIR).mkdirs();
-        System.out.println("📁 Storage directories created");
+        System.out.println("Storage directories created");
     }
 
     public static Properties getProperties() {

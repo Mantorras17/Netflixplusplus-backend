@@ -1,13 +1,9 @@
 package org.netflixpp.service;
 
-import org.netflixpp.config.Config;
 import org.netflixpp.config.DbConfig;
 import org.netflixpp.mesh.ChunkManager;
-import java.io.*;
-import java.nio.file.*;
 import java.sql.*;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class MovieService {
 
