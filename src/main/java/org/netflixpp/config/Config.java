@@ -23,10 +23,11 @@ public class Config {
     // Chunks P2P
     public static final int CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 
-    // JWT
     public static final String JWT_SECRET =
-            System.getenv().getOrDefault("JWT_SECRET", "netflixpp-secret-key-2024");
-    public static final long JWT_EXPIRATION = 24 * 60 * 60 * 1000; // 24h
+            System.getenv().getOrDefault("JWT_SECRET",
+                    "netflixpp-super-secret-key-32-chars-long-2024!");
+
+    public static final long JWT_EXPIRATION = 24 * 60 * 60 * 1000;
 
     // FFMPEG
     public static final String FFMPEG_PATH = "ffmpeg";

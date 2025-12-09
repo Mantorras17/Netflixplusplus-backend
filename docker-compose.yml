@@ -1,4 +1,4 @@
-version: '3.8'
+# Remova a linha 'version: '3.8'' se quiser evitar o warning
 
 services:
   mariadb:
@@ -23,31 +23,9 @@ services:
     ports:
       - "9042:9042"
     environment:
-      CASSANDRA_CLUSTER_NAME: NetflixPPCluster
+      CASSANDRA_CLUSTER_NAME: NetflixPP
     volumes:
       - cassandra_data:/var/lib/cassandra
-    networks:
-      - netflixpp-network
-
-  app:
-    build: .
-    container_name: netflixpp-backend
-    ports:
-      - "8080:8080"
-      - "9001:9001"  # Porta do P2P
-    environment:
-      DB_HOST: mariadb
-      DB_PORT: 3306
-      DB_NAME: netflixpp
-      DB_USER: admin
-      DB_PASS: admin
-      CASSANDRA_HOST: cassandra
-      CASSANDRA_PORT: 9042
-    volumes:
-      - ./storage:/app/storage
-    depends_on:
-      - mariadb
-      - cassandra
     networks:
       - netflixpp-network
 
