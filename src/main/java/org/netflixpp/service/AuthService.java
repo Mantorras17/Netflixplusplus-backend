@@ -27,11 +27,12 @@ public class AuthService {
     public boolean register(String username, String password, String email) throws SQLException {
         try (Connection conn = DbConfig.getMariaDB();
              PreparedStatement stmt = conn.prepareStatement(
-                     "INSERT INTO users (username, password, email) VALUES (?, ?, ?)")) {
+                     "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)")) {
 
             stmt.setString(1, username);
             stmt.setString(2, password);
             stmt.setString(3, email != null ? email : "");
+            stmt.setString(4, "user"); // Default role
 
             return stmt.executeUpdate() > 0;
 

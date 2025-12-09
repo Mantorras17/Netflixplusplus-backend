@@ -29,9 +29,9 @@ public class DbConfig {
     static {
         try {
             Class.forName("org.mariadb.jdbc.Driver");
-            System.out.println("✅ MariaDB driver loaded");
+            System.out.println("MariaDB driver loaded");
         } catch (ClassNotFoundException e) {
-            System.err.println("❌ MariaDB driver not found");
+            System.err.println("MariaDB driver not found");
         }
     }
 

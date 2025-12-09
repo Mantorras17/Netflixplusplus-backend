@@ -11,6 +11,13 @@ public class MeshController {
     private final MeshService meshService = new MeshService();
 
     @GET
+    @Path("/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response health() {
+        return Response.ok(Map.of("status", "healthy", "service", "mesh")).build();
+    }
+
+    @GET
     @Path("/chunks/{movieId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getChunks(@PathParam("movieId") String movieId) {

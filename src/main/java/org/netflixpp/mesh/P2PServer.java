@@ -23,7 +23,7 @@ public class P2PServer {
         serverSocket = new ServerSocket(Config.P2P_PORT + 1); // Porta diferente do HTTP
         running = true;
 
-        System.out.println("🌀 P2P TCP Server started on port " + (Config.P2P_PORT + 1));
+        System.out.println("P2P TCP Server started on port " + (Config.P2P_PORT + 1));
 
         while (running) {
             Socket clientSocket = serverSocket.accept();
@@ -53,7 +53,7 @@ public class P2PServer {
 
                 // Ler comando
                 String command = dis.readUTF();
-                System.out.println("🌀 P2P Command: " + command);
+                System.out.println("P2P Command: " + command);
 
                 if ("HELLO".equals(command)) {
                     handleHello(dos);
@@ -68,7 +68,7 @@ public class P2PServer {
                 }
 
             } catch (Exception e) {
-                System.err.println("🌀 P2P Error: " + e.getMessage());
+                System.err.println("P2P Error: " + e.getMessage());
             } finally {
                 try {
                     socket.close();
@@ -141,7 +141,7 @@ public class P2PServer {
                 }
             }
 
-            System.out.println("🌀 Sent chunk " + chunkIndex + " of movie " + movieId);
+            System.out.println("Sent chunk " + chunkIndex + " of movie " + movieId);
         }
 
         private void handlePing(DataOutputStream dos) throws IOException {
@@ -156,7 +156,7 @@ public class P2PServer {
                 P2PServer server = new P2PServer();
                 server.start();
             } catch (IOException e) {
-                System.err.println("❌ P2P Server failed: " + e.getMessage());
+                System.err.println("P2P Server failed: " + e.getMessage());
             }
         }).start();
     }
