@@ -1,7 +1,6 @@
 package org.netflixpp.filter;
 
 import jakarta.ws.rs.container.*;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 import java.io.IOException;
 

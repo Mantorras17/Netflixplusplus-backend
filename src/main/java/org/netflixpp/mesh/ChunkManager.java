@@ -48,10 +48,10 @@ public class ChunkManager {
                 }
             }
 
-            System.out.println("📦 Loaded chunks for " + movieChunks.size() + " movies");
+            System.out.println("Loaded chunks for " + movieChunks.size() + " movies");
 
         } catch (IOException e) {
-            System.err.println("❌ Error loading chunks: " + e.getMessage());
+            System.err.println("Error loading chunks: " + e.getMessage());
         }
     }
 
@@ -97,7 +97,7 @@ public class ChunkManager {
         // Salvar no mapa
         movieChunks.put(movieId, chunkInfos);
 
-        System.out.println("✅ Split movie into " + chunkFiles.size() + " chunks");
+        System.out.println("Split movie into " + chunkFiles.size() + " chunks");
         return chunkFiles;
     }
 

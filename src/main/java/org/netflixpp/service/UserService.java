@@ -3,7 +3,7 @@ package org.netflixpp.service;
 import org.netflixpp.config.DbConfig;
 import java.sql.*;
 import java.util.*;
-import java.util.stream.Collectors;
+
 
 public class UserService {
 
