@@ -77,6 +77,12 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    implementation("com.google.cloud:google-cloud-storage:2.42.0")
+
+    // Firebase Admin SDK (for verifying Firebase ID tokens)
+    implementation("com.google.firebase:firebase-admin:9.3.0")
+
 }
 
 tasks.test {

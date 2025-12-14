@@ -2,6 +2,7 @@ package org.netflixpp.mesh;
 
 import org.netflixpp.config.Config;
 import org.netflixpp.util.HashUtil;
+import org.netflixpp.util.GcsUploader;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -63,6 +64,9 @@ public class ChunkManager {
         List<String> chunkFiles = new ArrayList<>();
         List<ChunkInfo> chunkInfos = new ArrayList<>();
 
+        // Inferir resolução a partir do nome/caminho do arquivo do filme
+        String resolution = inferResolution(movieFilePath);
+
         try (InputStream is = Files.newInputStream(moviePath)) {
             byte[] buffer = new byte[Config.CHUNK_SIZE];
             int bytesRead;
@@ -85,6 +89,16 @@ public class ChunkManager {
                 Path hashedPath = chunksDir.resolve(hashedName);
                 Files.move(chunkPath, hashedPath);
 
+                // Upload to Google Cloud Storage (non-blocking for failures)
+                try {
+                    if (Config.GCS_UPLOAD_ENABLED) {
+                        String objectName = renderGcsObjectName(movieId, hashedName, resolution);
+                        GcsUploader.getInstance().upload(hashedPath.toFile(), objectName, "application/octet-stream");
+                    }
+                } catch (Exception ex) {
+                    System.err.println("GCS upload failed for " + hashedPath + ": " + ex.getMessage());
+                }
+
                 // Criar info do chunk
                 ChunkInfo info = new ChunkInfo(chunkIndex, hash, bytesRead, true);
                 chunkInfos.add(info);
@@ -99,6 +113,32 @@ public class ChunkManager {
 
         System.out.println("Split movie into " + chunkFiles.size() + " chunks");
         return chunkFiles;
+    }
+
+    private static String inferResolution(String movieFilePath) {
+        String low = movieFilePath == null ? "" : movieFilePath.toLowerCase();
+        if (low.contains("1080p")) return "1080p";
+        if (low.contains("360p")) return "360p";
+        // fallback
+        return "unknown";
+    }
+
+    private static String renderGcsObjectName(String movieId, String fileName, String resolution) {
+        String tpl = Config.GCS_CHUNK_PATH_TEMPLATE;
+        String res = resolution == null ? "unknown" : resolution;
+        String normalizedMovieId = normalizeMovieIdForGcs(movieId);
+        return tpl
+                .replace("{movieId}", normalizedMovieId)
+                .replace("{fileName}", fileName)
+                .replace("{resolution}", res);
+    }
+
+    private static String normalizeMovieIdForGcs(String movieId) {
+        if (movieId == null) return "unknown";
+        String m = movieId;
+        if (m.endsWith("_1080p")) m = m.substring(0, m.length() - "_1080p".length());
+        if (m.endsWith("_360p")) m = m.substring(0, m.length() - "_360p".length());
+        return m;
     }
 
     public List<String> getAvailableChunks(String movieId) {

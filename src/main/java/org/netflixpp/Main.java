@@ -9,7 +9,9 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
-
+import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 public class Main {
 
@@ -22,6 +24,12 @@ public class Main {
 
         // Criar diretórios de storage
         createStorageDirectories();
+
+        // Diagnóstico de configuração GCS
+        logGcsDiagnostics();
+
+        // Diagnóstico do FFmpeg
+        logFfmpegDiagnostics();
 
         // Iniciar servidores Mesh
         System.out.println("Starting Mesh servers...");
@@ -74,6 +82,13 @@ public class Main {
                     "chunk_hash VARCHAR(64)," +
                     "chunk_size BIGINT," +
                     "peer_count INT DEFAULT 0," +
+                    "FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE)");
+
+            // Criar tabela de histórico de visualizações (agregado por filme)
+            // Compatível com o uso atual em StreamService.registerView (INSERT ... ON DUPLICATE KEY UPDATE)
+            stmt.execute("CREATE TABLE IF NOT EXISTS watch_history (" +
+                    "movie_id INT PRIMARY KEY," +
+                    "views INT DEFAULT 0," +
                     "FOREIGN KEY (movie_id) REFERENCES movies(id) ON DELETE CASCADE)");
 
             // Inserir admin padrão (se não existir)
@@ -152,6 +167,7 @@ public class Main {
             config.register(org.netflixpp.controller.MovieController.class);
             config.register(org.netflixpp.controller.StreamController.class);
             config.register(org.netflixpp.controller.AdminController.class);
+            config.register(org.netflixpp.controller.HlsController.class);
             config.register(org.netflixpp.controller.MeshController.class);
             config.register(org.netflixpp.controller.UserController.class);
 
@@ -201,5 +217,52 @@ public class Main {
         });
         serverThread.setDaemon(true);
         return serverThread;
+    }
+
+    private static void logGcsDiagnostics() {
+        try {
+            if (Config.GCS_UPLOAD_ENABLED) {
+                System.out.println("[GCS] Upload enabled");
+                System.out.println("[GCS] Bucket: " + (Config.GCS_BUCKET_NAME == null ? "<null>" : Config.GCS_BUCKET_NAME));
+                System.out.println("[GCS] Chunk path template: " + Config.GCS_CHUNK_PATH_TEMPLATE);
+                String credPath = Config.GCS_CREDENTIALS_PATH;
+                System.out.println("[GCS] Credentials path: " + credPath);
+                if (credPath == null || credPath.isEmpty()) {
+                    System.err.println("[GCS][WARN] GCS_CREDENTIALS_PATH is empty. App will try application default credentials.");
+                } else {
+                    File f = new File(credPath);
+                    if (!f.exists()) {
+                        System.err.println("[GCS][WARN] Credentials file not found at: " + credPath);
+                    }
+                }
+                if (Config.GCS_BUCKET_NAME == null || Config.GCS_BUCKET_NAME.isEmpty()) {
+                    System.err.println("[GCS][WARN] GCS_BUCKET_NAME is not set. Set env var or -DGCS_BUCKET_NAME.");
+                }
+            } else {
+                System.out.println("[GCS] Upload disabled (GCS_UPLOAD_ENABLED=false)");
+            }
+        } catch (Exception e) {
+            System.err.println("[GCS] Diagnostics failed: " + e.getMessage());
+        }
+    }
+
+    private static void logFfmpegDiagnostics() {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(Config.FFMPEG_PATH, "-version");
+            Process p = pb.start();
+            String firstLine = null;
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                firstLine = br.readLine();
+            }
+            p.waitFor();
+            if (p.exitValue() == 0) {
+                System.out.println("[FFMPEG] Found: " + (firstLine == null ? "<no output>" : firstLine));
+            } else {
+                System.err.println("[FFMPEG][WARN] ffmpeg returned non-zero exit code. PATH='" + Config.FFMPEG_PATH + "'");
+            }
+        } catch (Exception e) {
+            System.err.println("[FFMPEG][WARN] ffmpeg not found or not executable at PATH='" + Config.FFMPEG_PATH + "' : " + e.getMessage());
+            System.err.println("            Configure via env var or -DFFMPEG_PATH (e.g., C:\\ffmpeg\\bin\\ffmpeg.exe)");
+        }
     }
 }

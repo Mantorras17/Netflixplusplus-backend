@@ -78,13 +78,21 @@ public class AdminService {
             result.put("file360", path360.toString());
             result.put("status", "uploaded");
 
-            // Gerar chunks para P2P
-            String movieHash = "movie_" + movieId;
-            List<String> chunks = chunkManager.splitMovieIntoChunks(
-                    path1080.toString(), movieHash);
+            // Gerar chunks para P2P e enviar ao GCS para ambas resoluções
+            // Usamos movieIds distintos localmente para evitar colisão de nomes de arquivos:
+            //   movie_<id>_1080p e movie_<id>_360p
+            String movieHash1080 = "movie_" + movieId + "_1080p";
+            String movieHash360 = "movie_" + movieId + "_360p";
 
-            result.put("chunksGenerated", chunks.size());
-            result.put("chunkIds", chunks);
+            List<String> chunks1080 = chunkManager.splitMovieIntoChunks(
+                    path1080.toString(), movieHash1080);
+            List<String> chunks360 = chunkManager.splitMovieIntoChunks(
+                    path360.toString(), movieHash360);
+
+            result.put("chunksGenerated1080", chunks1080.size());
+            result.put("chunkIds1080", chunks1080);
+            result.put("chunksGenerated360", chunks360.size());
+            result.put("chunkIds360", chunks360);
 
         }
 

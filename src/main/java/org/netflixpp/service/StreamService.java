@@ -4,6 +4,7 @@ import org.netflixpp.config.Config;
 import org.netflixpp.config.DbConfig;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
+import java.nio.channels.ClosedChannelException;
 import java.io.*;
 import java.nio.file.*;
 import java.sql.*;
@@ -29,15 +30,27 @@ public class StreamService {
             long start = 0;
             long end = fileLength - 1;
 
-            // Parse Range header
+            // Parse Range header (robusto)
             if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                String range = rangeHeader.substring(6);
-                String[] parts = range.split("-");
-                start = Long.parseLong(parts[0]);
-                if (parts.length > 1 && !parts[1].isEmpty()) {
-                    end = Long.parseLong(parts[1]);
+                try {
+                    String range = rangeHeader.substring(6);
+                    String[] parts = range.split("-");
+                    if (parts.length > 0 && !parts[0].isEmpty()) {
+                        start = Math.max(0, Long.parseLong(parts[0]));
+                    }
+                    if (parts.length > 1 && !parts[1].isEmpty()) {
+                        end = Long.parseLong(parts[1]);
+                    }
+                    if (end > fileLength - 1) end = fileLength - 1;
+                    if (start > end) {
+                        start = 0;
+                        end = fileLength - 1;
+                    }
+                } catch (Exception ignore) {
+                    // Cabeçalho inválido: servimos o arquivo completo (200 OK)
+                    start = 0;
+                    end = fileLength - 1;
                 }
-                if (end > fileLength - 1) end = fileLength - 1;
             }
 
             long contentLength = end - start + 1;
@@ -56,6 +69,20 @@ public class StreamService {
                         output.write(buffer, 0, read);
                         remaining -= read;
                     }
+                    try { output.flush(); } catch (IOException ignored) {}
+                } catch (org.eclipse.jetty.io.EofException eof) {
+                    // Cliente encerrou a conexão (Jetty EoF): tratar como cenário esperado
+                    return;
+                } catch (ClosedChannelException cce) {
+                    // Cliente encerrou a conexão: não tratar como erro
+                } catch (IOException ioe) {
+                    String msg = ioe.getMessage();
+                    if (msg != null && (msg.contains("Broken pipe") || msg.contains("Connection reset"))) {
+                        // Desconexão do cliente durante o streaming: esperado
+                        return;
+                    }
+                    // Erro real: propagar para ser tratado pelo framework
+                    throw ioe;
                 }
             };
 
@@ -282,7 +309,7 @@ public class StreamService {
     private void registerView(int movieId) {
         try (Connection conn = DbConfig.getMariaDB();
              PreparedStatement stmt = conn.prepareStatement(
-                     "INSERT INTO watch_history (movie_id) VALUES (?) " +
+                     "INSERT INTO watch_history (movie_id, views) VALUES (?, 1) " +
                              "ON DUPLICATE KEY UPDATE views = views + 1")) {
 
             stmt.setInt(1, movieId);

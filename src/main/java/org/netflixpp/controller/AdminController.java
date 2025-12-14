@@ -1,6 +1,7 @@
 package org.netflixpp.controller;
 
 import org.netflixpp.service.AdminService;
+import org.netflixpp.service.GcsBackfillService;
 import org.netflixpp.util.JWTUtil;
 import org.glassfish.jersey.media.multipart.*;
 import jakarta.ws.rs.*;
@@ -12,6 +13,8 @@ import java.util.Map;
 public class AdminController {
 
     private final AdminService adminService = new AdminService();
+    private final GcsBackfillService gcsBackfillService = new GcsBackfillService();
+    private final org.netflixpp.service.HlsService hlsService = new org.netflixpp.service.HlsService();
 
     private boolean isAdmin(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -420,6 +423,57 @@ public class AdminController {
             Map<String, Object> result = adminService.cleanupSystem();
             return Response.ok(result).build();
 
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    // ========== GCS MANAGEMENT ==========
+
+    @POST
+    @Path("/gcs/backfill")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response backfillGcs(
+            @HeaderParam("Authorization") String auth,
+            @QueryParam("movieId") String movieId,
+            @QueryParam("resolution") String resolution) {
+
+        if (!isAdmin(auth)) {
+            return Response.status(403)
+                    .entity(Map.of("error", "Forbidden: Admin access required"))
+                    .build();
+        }
+
+        try {
+            Map<String, Object> res = gcsBackfillService.backfill(movieId, resolution);
+            return Response.ok(res).build();
+        } catch (Exception e) {
+            return Response.serverError()
+                    .entity(Map.of("error", e.getMessage()))
+                    .build();
+        }
+    }
+
+    // ========== HLS MANAGEMENT ==========
+
+    @POST
+    @Path("/hls/generate")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response generateHls(
+            @HeaderParam("Authorization") String auth,
+            @QueryParam("movieId") int movieId) {
+
+        if (!isAdmin(auth)) {
+            return Response.status(403)
+                    .entity(Map.of("error", "Forbidden: Admin access required"))
+                    .build();
+        }
+
+        try {
+            Map<String, Object> res = hlsService.generateAndUpload(movieId);
+            return Response.ok(res).build();
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
