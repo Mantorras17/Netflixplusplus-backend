@@ -25,7 +25,7 @@ public class JWTFilter implements ContainerRequestFilter {
         List<String> publicEndpoints = Arrays.asList(
                 "auth/login",
                 "auth/register",
-                "mesh/"   // endpoints mesh
+                "mesh/"
         );
 
         // Verificar se o path atual é um endpoint público

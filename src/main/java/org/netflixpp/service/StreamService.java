@@ -290,21 +290,25 @@ public class StreamService {
     }
 
     private String getMovieFilePath(int movieId, String quality) throws SQLException {
+        System.out.println("getMovieFilePath: id=" + movieId + " quality=" + quality);
         try (Connection conn = DbConfig.getMariaDB();
              PreparedStatement stmt = conn.prepareStatement(
                      "SELECT file_path_1080, file_path_360 FROM movies WHERE id = ?")) {
 
             stmt.setInt(1, movieId);
             ResultSet rs = stmt.executeQuery();
-
             if (rs.next()) {
-                return "360".equals(quality) ?
-                        rs.getString("file_path_360") :
-                        rs.getString("file_path_1080");
+                String p1080 = rs.getString("file_path_1080");
+                String p360  = rs.getString("file_path_360");
+                System.out.println("DB paths: 1080=" + p1080 + " 360=" + p360);
+                return "360".equals(quality) ? p360 : p1080;
+            } else {
+                System.out.println("No movie row for id=" + movieId);
             }
+            return null;
         }
-        return null;
     }
+
 
     private void registerView(int movieId) {
         try (Connection conn = DbConfig.getMariaDB();
