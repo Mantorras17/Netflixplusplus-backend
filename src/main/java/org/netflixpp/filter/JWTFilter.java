@@ -1,12 +1,15 @@
 package org.netflixpp.filter;
 
-import org.netflixpp.util.JWTUtil;
+import com.google.firebase.auth.FirebaseToken;
 import jakarta.annotation.Priority;
 import jakarta.ws.rs.Priorities;
-import jakarta.ws.rs.container.*;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import org.netflixpp.util.FirebaseUtil;
+
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -18,28 +21,27 @@ public class JWTFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext ctx) throws IOException {
         String path = ctx.getUriInfo().getPath();
+        System.out.println("🔍 [DEBUG] Auth filter checking path: " + path);
 
-        System.out.println("🔍 [DEBUG] JWTFilter checking path: " + path);
-
-        // Lista de endpoints PÚBLICOS que NÃO precisam de autenticação
+        // Endpoints PÚBLICOS (ajusta conforme tua API)
         List<String> publicEndpoints = Arrays.asList(
-                "auth/login",
-                "auth/register",
-                "mesh/"
+                "auth/validate-token",  // pode ser protegido se quiseres
+                "auth/reset-password",
+                "mesh/",
+                "stream/health",
+                "hls/public"
         );
 
-        // Verificar se o path atual é um endpoint público
         boolean isPublic = publicEndpoints.stream()
                 .anyMatch(publicPath -> path.startsWith(publicPath));
 
         if (isPublic) {
             System.out.println("✅ [DEBUG] Allowing public endpoint: " + path);
-            return; // Não requer autenticação
+            return;
         }
 
         System.out.println("🔒 [DEBUG] Requiring auth for: " + path);
 
-        // Extrair token apenas para endpoints protegidos
         String authHeader = ctx.getHeaderString(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             System.out.println("❌ [DEBUG] Missing or invalid auth header");
@@ -47,17 +49,19 @@ public class JWTFilter implements ContainerRequestFilter {
             return;
         }
 
-        String token = authHeader.substring(7);
-        if (!JWTUtil.validateToken(token)) {
-            System.out.println("❌ [DEBUG] Invalid or expired token");
+        FirebaseToken decoded = FirebaseUtil.verifyIdToken(authHeader);
+        if (decoded == null) {
+            System.out.println("❌ [DEBUG] Invalid or expired Firebase ID token");
             abort(ctx, "Invalid or expired token");
             return;
         }
 
-        // Adicionar informações do usuário ao contexto
-        ctx.setProperty("username", JWTUtil.getUsername(token));
-        ctx.setProperty("role", JWTUtil.getRole(token));
-        System.out.println("✅ [DEBUG] User authenticated: " + JWTUtil.getUsername(token));
+        // Coloca dados do user no contexto para controllers/serviços
+        ctx.setProperty("firebaseUid", decoded.getUid());
+        ctx.setProperty("email", decoded.getEmail());
+        ctx.setProperty("name", decoded.getName());
+
+        System.out.println("✅ [DEBUG] User authenticated (uid): " + decoded.getUid());
     }
 
     private void abort(ContainerRequestContext ctx, String message) {

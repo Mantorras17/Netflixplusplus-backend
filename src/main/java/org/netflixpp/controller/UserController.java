@@ -1,46 +1,52 @@
 package org.netflixpp.controller;
 
-import org.netflixpp.service.UserService;
-import org.netflixpp.util.JWTUtil;
+import com.google.firebase.auth.FirebaseToken;
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.netflixpp.service.AuthService;
+import org.netflixpp.service.UserService;
+import org.netflixpp.util.FirebaseUtil;
+
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-@Path("/user")
+@Path("/users")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
 public class UserController {
 
     private final UserService userService = new UserService();
+    private final AuthService authService = new AuthService();
+
+    // Utilitário: resolve user interno a partir do header Authorization (Firebase)
+    private Map<String, Object> resolveUserFromAuth(String authHeader) throws Exception {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return null;
+        }
+
+        FirebaseToken decoded = FirebaseUtil.verifyIdToken(authHeader);
+        if (decoded == null) {
+            return null;
+        }
+
+        String firebaseUid = decoded.getUid();
+        return authService.getUserByFirebaseUid(firebaseUid);
+    }
 
     @GET
-    @Path("/profile")
-    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/me")
     public Response getProfile(@HeaderParam("Authorization") String authHeader) {
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            Map<String, Object> profile = userService.getUserProfile(username);
-
-            if (profile == null) {
-                return Response.status(404)
-                        .entity(Map.of("error", "User not found"))
-                        .build();
-            }
-
-            return Response.ok(profile).build();
-
+            return Response.ok(user).build();
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -50,36 +56,19 @@ public class UserController {
 
     @PUT
     @Path("/profile")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
     public Response updateProfile(
             @HeaderParam("Authorization") String authHeader,
-            Map<String, String> updates) {
-
+            Map<String, Object> profileData) {
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            // Não permitir mudar username via este endpoint
-            if (updates.containsKey("username")) {
-                return Response.status(400)
-                        .entity(Map.of("error", "Cannot change username"))
-                        .build();
-            }
-
-            boolean success = userService.updateUserProfile(username, updates);
+            String username = (String) user.get("username");
+            boolean success = userService.updateUserProfile(username, profileData);
 
             if (success) {
                 return Response.ok(Map.of(
@@ -90,135 +79,6 @@ public class UserController {
                         .entity(Map.of("error", "Failed to update profile"))
                         .build();
             }
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @GET
-    @Path("/watch-history")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getWatchHistory(
-            @HeaderParam("Authorization") String authHeader,
-            @QueryParam("page") @DefaultValue("1") int page,
-            @QueryParam("limit") @DefaultValue("20") int limit) {
-
-        try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Unauthorized"))
-                        .build();
-            }
-
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            Map<String, Object> history = userService.getWatchHistory(username, page, limit);
-            return Response.ok(history).build();
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @POST
-    @Path("/watch-history")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response addToWatchHistory(
-            @HeaderParam("Authorization") String authHeader,
-            Map<String, Object> watchData) {
-
-        try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Unauthorized"))
-                        .build();
-            }
-
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            Integer movieId = (Integer) watchData.get("movieId");
-            Integer progress = (Integer) watchData.get("progress");
-
-            if (movieId == null) {
-                return Response.status(400)
-                        .entity(Map.of("error", "Movie ID is required"))
-                        .build();
-            }
-
-            boolean success = userService.addToWatchHistory(username, movieId, progress);
-
-            if (success) {
-                return Response.ok(Map.of(
-                        "status", "Added to watch history"
-                )).build();
-            } else {
-                return Response.status(400)
-                        .entity(Map.of("error", "Failed to add to watch history"))
-                        .build();
-            }
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @DELETE
-    @Path("/watch-history/{movieId}")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response removeFromWatchHistory(
-            @HeaderParam("Authorization") String authHeader,
-            @PathParam("movieId") int movieId) {
-
-        try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Unauthorized"))
-                        .build();
-            }
-
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            boolean success = userService.removeFromWatchHistory(username, movieId);
-
-            if (success) {
-                return Response.ok(Map.of(
-                        "status", "Removed from watch history"
-                )).build();
-            } else {
-                return Response.status(404)
-                        .entity(Map.of("error", "Movie not found in watch history"))
-                        .build();
-            }
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -228,26 +88,19 @@ public class UserController {
 
     @GET
     @Path("/favorites")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response getFavorites(@HeaderParam("Authorization") String authHeader) {
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
+            String username = (String) user.get("username");
+            Map<String, Object> result = userService.getFavorites(username);
 
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            return Response.ok(userService.getFavorites(username)).build();
-
+            return Response.ok(result).build();
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -257,27 +110,18 @@ public class UserController {
 
     @POST
     @Path("/favorites/{movieId}")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response addFavorite(
             @HeaderParam("Authorization") String authHeader,
             @PathParam("movieId") int movieId) {
-
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
+            String username = (String) user.get("username");
             boolean success = userService.addFavorite(username, movieId);
 
             if (success) {
@@ -286,10 +130,9 @@ public class UserController {
                 )).build();
             } else {
                 return Response.status(400)
-                        .entity(Map.of("error", "Failed to add to favorites"))
+                        .entity(Map.of("error", "Failed to add favorite"))
                         .build();
             }
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -299,27 +142,18 @@ public class UserController {
 
     @DELETE
     @Path("/favorites/{movieId}")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response removeFavorite(
             @HeaderParam("Authorization") String authHeader,
             @PathParam("movieId") int movieId) {
-
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
+            String username = (String) user.get("username");
             boolean success = userService.removeFavorite(username, movieId);
 
             if (success) {
@@ -327,11 +161,10 @@ public class UserController {
                         "status", "Removed from favorites"
                 )).build();
             } else {
-                return Response.status(404)
-                        .entity(Map.of("error", "Movie not found in favorites"))
+                return Response.status(400)
+                        .entity(Map.of("error", "Failed to remove favorite"))
                         .build();
             }
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -341,29 +174,21 @@ public class UserController {
 
     @GET
     @Path("/recommendations")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response getRecommendations(
             @HeaderParam("Authorization") String authHeader,
             @QueryParam("limit") @DefaultValue("10") int limit) {
-
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
+            String username = (String) user.get("username");
+            Map<String, Object> result = userService.getRecommendations(username, limit);
 
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            return Response.ok(userService.getRecommendations(username, limit)).build();
-
+            return Response.ok(result).build();
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -373,29 +198,21 @@ public class UserController {
 
     @GET
     @Path("/activity")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response getUserActivity(
             @HeaderParam("Authorization") String authHeader,
-            @QueryParam("days") @DefaultValue("7") int days) {
-
+            @QueryParam("days") @DefaultValue("30") int days) {
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
+            String username = (String) user.get("username");
+            Map<String, Object> result = userService.getUserActivity(username, days);
 
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            return Response.ok(userService.getUserActivity(username, days)).build();
-
+            return Response.ok(result).build();
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -404,29 +221,20 @@ public class UserController {
     }
 
     @POST
-    @Path("/rating/{movieId}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/ratings/{movieId}")
     public Response rateMovie(
             @HeaderParam("Authorization") String authHeader,
             @PathParam("movieId") int movieId,
             Map<String, Integer> ratingData) {
-
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
+            String username = (String) user.get("username");
 
             Integer rating = ratingData.get("rating");
             if (rating == null || rating < 1 || rating > 5) {
@@ -436,7 +244,6 @@ public class UserController {
             }
 
             boolean success = userService.rateMovie(username, movieId, rating);
-
             if (success) {
                 return Response.ok(Map.of(
                         "status", "Rating submitted"
@@ -446,7 +253,6 @@ public class UserController {
                         .entity(Map.of("error", "Failed to submit rating"))
                         .build();
             }
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))
@@ -456,24 +262,16 @@ public class UserController {
 
     @DELETE
     @Path("/account")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response deleteAccount(@HeaderParam("Authorization") String authHeader) {
         try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            Map<String, Object> user = resolveUserFromAuth(authHeader);
+            if (user == null) {
                 return Response.status(401)
                         .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            String username = JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
+            String username = (String) user.get("username");
             boolean success = userService.deleteAccount(username);
 
             if (success) {
@@ -486,7 +284,6 @@ public class UserController {
                         .entity(Map.of("error", "Failed to delete account"))
                         .build();
             }
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))

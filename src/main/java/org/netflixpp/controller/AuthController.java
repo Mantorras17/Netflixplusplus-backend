@@ -1,181 +1,52 @@
 package org.netflixpp.controller;
 
-import org.netflixpp.service.AuthService;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+import org.netflixpp.service.AuthService;
+import org.netflixpp.util.FirebaseUtil;
+import com.google.firebase.auth.FirebaseToken;
+
 import java.util.Map;
 
 @Path("/auth")
+@Consumes(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON)
 public class AuthController {
 
     private final AuthService authService = new AuthService();
 
-    @POST
-    @Path("/login")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response login(Map<String, String> credentials) {
-        try {
-            String username = credentials.get("username");
-            String password = credentials.get("password");
-
-            if (username == null || password == null) {
-                return Response.status(400)
-                        .entity(Map.of("error", "Username and password required"))
-                        .build();
-            }
-
-            String token = authService.login(username, password);
-            if (token == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid credentials"))
-                        .build();
-            }
-
-            Map<String, Object> user = authService.getUserByToken(token);
-
-            return Response.ok(Map.of(
-                    "token", token,
-                    "user", user
-            )).build();
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @POST
-    @Path("/register")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response register(Map<String, String> userData) {
-        try {
-            boolean success = authService.register(
-                    userData.get("username"),
-                    userData.get("password"),
-                    userData.get("email")
-            );
-
-            if (success) {
-                return Response.ok(Map.of(
-                        "status", "User created successfully",
-                        "message", "Please login with your credentials"
-                )).build();
-            } else {
-                return Response.status(400)
-                        .entity(Map.of("error", "Username already exists"))
-                        .build();
-            }
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @POST
-    @Path("/change-password")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response changePassword(
-            @HeaderParam("Authorization") String authHeader,
-            Map<String, String> passwords) {
-
-        try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Unauthorized"))
-                        .build();
-            }
-
-            String token = authHeader.substring(7);
-            String username = org.netflixpp.util.JWTUtil.getUsername(token);
-
-            if (username == null) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Invalid token"))
-                        .build();
-            }
-
-            String oldPassword = passwords.get("oldPassword");
-            String newPassword = passwords.get("newPassword");
-
-            if (oldPassword == null || newPassword == null) {
-                return Response.status(400)
-                        .entity(Map.of("error", "Old and new password required"))
-                        .build();
-            }
-
-            boolean success = authService.changePassword(username, oldPassword, newPassword);
-
-            if (success) {
-                return Response.ok(Map.of("status", "Password changed successfully")).build();
-            } else {
-                return Response.status(400)
-                        .entity(Map.of("error", "Old password is incorrect"))
-                        .build();
-            }
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
-    @POST
-    @Path("/reset-password")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response resetPassword(Map<String, String> request) {
-        try {
-            String email = request.get("email");
-
-            if (email == null || email.trim().isEmpty()) {
-                return Response.status(400)
-                        .entity(Map.of("error", "Email required"))
-                        .build();
-            }
-
-            boolean success = authService.resetPassword(email);
-
-            if (success) {
-                return Response.ok(Map.of(
-                        "status", "Password reset email sent",
-                        "message", "Check your email for reset instructions"
-                )).build();
-            } else {
-                return Response.status(400)
-                        .entity(Map.of("error", "Email not found"))
-                        .build();
-            }
-
-        } catch (Exception e) {
-            return Response.serverError()
-                    .entity(Map.of("error", e.getMessage()))
-                    .build();
-        }
-    }
-
+    /**
+     * Endpoint usado pela app após login Firebase.
+     * A app envia o ID token no header Authorization: Bearer <idToken>.
+     * O backend valida o token e cria/retorna o utilizador interno associado ao firebaseUid.
+     */
     @GET
     @Path("/me")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response getCurrentUser(@HeaderParam("Authorization") String authHeader) {
         try {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
-                        .entity(Map.of("error", "Unauthorized"))
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(Map.of("error", "Missing or invalid Authorization header"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            Map<String, Object> user = authService.getUserByToken(token);
+            FirebaseToken decoded = FirebaseUtil.verifyIdToken(authHeader);
+            if (decoded == null) {
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(Map.of("error", "Invalid or expired Firebase ID token"))
+                        .build();
+            }
+
+            String firebaseUid = decoded.getUid();
+            String email = decoded.getEmail();
+            String name = decoded.getName();
+
+            // Cria ou atualiza o user interno com base no Firebase UID
+            Map<String, Object> user = authService.getOrCreateUserFromFirebase(firebaseUid, email, name);
 
             if (user == null) {
-                return Response.status(404)
-                        .entity(Map.of("error", "User not found"))
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("error", "Failed to load or create user"))
                         .build();
             }
 
@@ -188,47 +59,38 @@ public class AuthController {
         }
     }
 
-    @POST
-    @Path("/logout")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response logout(@HeaderParam("Authorization") String authHeader) {
-        // Em produção: invalidar token no servidor
-        // Por enquanto apenas resposta de sucesso
-        return Response.ok(Map.of(
-                "status", "Logged out successfully",
-                "message", "Token should be discarded client-side"
-        )).build();
-    }
-
+    /**
+     * Endpoint opcional para o CMS/web verificar se o token ainda é válido.
+     * Útil para health-check de sessão do lado cliente.
+     */
     @GET
     @Path("/validate-token")
-    @Produces(MediaType.APPLICATION_JSON)
     public Response validateToken(@HeaderParam("Authorization") String authHeader) {
         try {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return Response.status(401)
+                return Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("valid", false, "error", "No token provided"))
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            boolean valid = org.netflixpp.util.JWTUtil.validateToken(token);
-
-            if (valid) {
-                String username = org.netflixpp.util.JWTUtil.getUsername(token);
-                String role = org.netflixpp.util.JWTUtil.getRole(token);
-
-                return Response.ok(Map.of(
-                        "valid", true,
-                        "username", username,
-                        "role", role,
-                        "message", "Token is valid"
-                )).build();
-            } else {
-                return Response.status(401)
+            FirebaseToken decoded = FirebaseUtil.verifyIdToken(authHeader);
+            if (decoded == null) {
+                return Response.status(Response.Status.UNAUTHORIZED)
                         .entity(Map.of("valid", false, "error", "Token is invalid or expired"))
                         .build();
             }
+
+            String firebaseUid = decoded.getUid();
+            String email = decoded.getEmail();
+            String name = decoded.getName();
+
+            return Response.ok(Map.of(
+                    "valid", true,
+                    "firebaseUid", firebaseUid,
+                    "email", email,
+                    "name", name,
+                    "message", "Token is valid"
+            )).build();
 
         } catch (Exception e) {
             return Response.serverError()
@@ -236,4 +98,40 @@ public class AuthController {
                     .build();
         }
     }
+
+    /**
+     * Logout passa a ser apenas semântico: o cliente descarta o token Firebase.
+     * Não há blacklist de tokens aqui.
+     */
+    @POST
+    @Path("/logout")
+    public Response logout(@HeaderParam("Authorization") String authHeader) {
+        // Em fluxo Firebase puro, o logout é feito no cliente (FirebaseAuth.signOut()).
+        // Aqui podes só devolver sucesso.
+        return Response.ok(Map.of(
+                "status", "Logged out successfully",
+                "message", "Token should be discarded client-side"
+        )).build();
+    }
+
+    /**
+     * Reset de password deve ser feito pelo próprio Firebase (sendPasswordResetEmail).
+     * Se quiseres manter um proxy, podes expor algo aqui que chame a API do Firebase Admin
+     * ou deixar o cliente falar direto com Firebase.
+     */
+    @POST
+    @Path("/reset-password")
+    public Response resetPassword(Map<String, Object> request) {
+        // Recomendado: fazer direto na app via FirebaseAuth.sendPasswordResetEmail(email).
+        return Response.status(Response.Status.NOT_IMPLEMENTED)
+                .entity(Map.of("error", "Password reset is handled by Firebase"))
+                .build();
+    }
+
+    /**
+     * Endpoints de login/register por username/password foram removidos
+     * porque a autenticação é feita exclusivamente pelo Firebase.
+     * Se ainda precisares deles para outra interface (ex.: web antiga),
+     * mantém noutra controller separada.
+     */
 }

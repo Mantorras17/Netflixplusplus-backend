@@ -13,7 +13,6 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.netflixpp.config.Config;
-import org.netflixpp.util.JWTUtil;
 import org.netflixpp.util.FirebaseUtil;
 
 import java.io.FileInputStream;
@@ -30,38 +29,37 @@ public class HlsController {
     public Response sign(@HeaderParam("Authorization") String auth,
                          @QueryParam("path") String requestPath) {
         try {
-            // Auth required: accept local JWT or Firebase ID token (when enabled)
+            // Auth required: Firebase ID token
             boolean authenticated = false;
+
             if (auth != null && auth.startsWith("Bearer ")) {
-                try {
-                    String token = auth.substring(7);
-                    String role = JWTUtil.getRole(token);
-                    authenticated = (role != null);
-                } catch (Exception ignore) { /* will try Firebase below */ }
-                if (!authenticated && Config.FIREBASE_ENABLED) {
-                    var fb = FirebaseUtil.verifyIdToken(auth);
-                    authenticated = (fb != null);
-                }
+                var fb = FirebaseUtil.verifyIdToken(auth);
+                authenticated = (fb != null);
             }
+
             if (!authenticated) {
-                return Response.status(401).entity(Map.of("error", "Unauthorized"))
+                return Response.status(401)
+                        .entity(Map.of("error", "Unauthorized"))
                         .build();
             }
 
             if (requestPath == null || requestPath.isEmpty()) {
-                return Response.status(400).entity(Map.of("error", "Missing path"))
+                return Response.status(400)
+                        .entity(Map.of("error", "Missing path"))
                         .build();
             }
 
             String objectPath = normalizeObjectPath(requestPath);
             if (objectPath == null) {
-                return Response.status(400).entity(Map.of("error", "Invalid path"))
+                return Response.status(400)
+                        .entity(Map.of("error", "Invalid path"))
                         .build();
             }
 
             // Only allow HLS assets under movies/{movieId}/{resolution}/hls/
             if (!objectPath.startsWith("movies/") || !objectPath.contains("/hls/")) {
-                return Response.status(403).entity(Map.of("error", "Forbidden path"))
+                return Response.status(403)
+                        .entity(Map.of("error", "Forbidden path"))
                         .build();
             }
 
@@ -82,14 +80,16 @@ public class HlsController {
             URL signed = storage.signUrl(
                     blob,
                     15, TimeUnit.MINUTES,
-                    SignUrlOption.withV4Signature());
+                    SignUrlOption.withV4Signature()
+            );
 
             // Return signed URL in header for Nginx auth_request consumption
             return Response.ok(Map.of(
                             "status", "ok",
                             "bucket", Config.GCS_BUCKET_NAME,
                             "object", objectPath,
-                            "expiresInMinutes", 15))
+                            "expiresInMinutes", 15
+                    ))
                     .header("X-GCS-Signed-Url", signed.toString())
                     .build();
 

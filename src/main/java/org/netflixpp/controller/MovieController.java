@@ -1,9 +1,12 @@
 package org.netflixpp.controller;
 
-import org.netflixpp.service.AuthService;
-import org.netflixpp.service.MovieService;
+import com.google.firebase.auth.FirebaseToken;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.*;
+import org.netflixpp.service.AuthService;
+import org.netflixpp.service.MovieService;
+import org.netflixpp.util.FirebaseUtil;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -11,6 +14,7 @@ import java.util.stream.Collectors;
 public class MovieController {
 
     private final MovieService movieService = new MovieService();
+    private final AuthService authService = new AuthService();
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -29,18 +33,22 @@ public class MovieController {
                                     .compareToIgnoreCase((String) b.get("title")))
                             .collect(Collectors.toList());
                     break;
+
                 case "year":
                     movies = movieService.getAllMovies().stream()
                             .sorted((a, b) -> ((Integer) b.get("year"))
                                     .compareTo((Integer) a.get("year")))
                             .collect(Collectors.toList());
                     break;
+
                 case "views":
                     // Ordenar por visualizações (se houver)
                     movies = movieService.getAllMovies();
                     break;
+
                 default: // newest
                     movies = movieService.getAllMovies();
+                    break;
             }
 
             // Paginação
@@ -233,7 +241,6 @@ public class MovieController {
     public Response recordView(
             @PathParam("id") int movieId,
             @HeaderParam("Authorization") String authHeader) {
-
         try {
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 return Response.status(401)
@@ -241,12 +248,18 @@ public class MovieController {
                         .build();
             }
 
-            String token = authHeader.substring(7);
-            Map<String, Object> user = new AuthService().getUserByToken(token);
+            FirebaseToken decoded = FirebaseUtil.verifyIdToken(authHeader);
+            if (decoded == null) {
+                return Response.status(401)
+                        .entity(Map.of("error", "Invalid or expired token"))
+                        .build();
+            }
 
+            String firebaseUid = decoded.getUid();
+            Map<String, Object> user = authService.getUserByFirebaseUid(firebaseUid);
             if (user == null) {
                 return Response.status(401)
-                        .entity(Map.of("error", "Invalid user"))
+                        .entity(Map.of("error", "User not found"))
                         .build();
             }
 
@@ -254,7 +267,6 @@ public class MovieController {
             movieService.recordMovieView(movieId, userId);
 
             return Response.ok(Map.of("status", "View recorded")).build();
-
         } catch (Exception e) {
             return Response.serverError()
                     .entity(Map.of("error", e.getMessage()))

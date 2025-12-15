@@ -1,102 +1,118 @@
 package org.netflixpp.service;
 
 import org.netflixpp.config.DbConfig;
-import org.netflixpp.util.JWTUtil;
+
 import java.sql.*;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
 public class AuthService {
 
-    public String login(String username, String password) throws SQLException {
-        try (Connection conn = DbConfig.getMariaDB();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT id, username, role FROM users WHERE username = ? AND password = ?")) {
+    /**
+     * Cria ou atualiza um utilizador interno com base nos dados do Firebase.
+     * @param firebaseUid UID do Firebase (obrigatório)
+     * @param email Email do Firebase (pode ser null)
+     * @param name Nome do Firebase (pode ser null)
+     * @return Map com dados do utilizador interno (id, username, role, email, createdAt, firebaseUid)
+     */
+    public Map<String, Object> getOrCreateUserFromFirebase(String firebaseUid, String email, String name) throws SQLException {
+        if (firebaseUid == null || firebaseUid.isBlank()) {
+            return null;
+        }
 
-            stmt.setString(1, username);
-            stmt.setString(2, password); // Em produção usar hash!
-            ResultSet rs = stmt.executeQuery();
+        try (Connection conn = DbConfig.getMariaDB()) {
+            // 1) Verificar se já existe user com este firebase_uid
+            try (PreparedStatement checkStmt = conn.prepareStatement(
+                    "SELECT id, username, role, email, created_at, firebase_uid " +
+                            "FROM users WHERE firebase_uid = ?")) {
 
-            if (rs.next()) {
-                String role = rs.getString("role");
-                return JWTUtil.generateToken(username, role);
+                checkStmt.setString(1, firebaseUid);
+                ResultSet rs = checkStmt.executeQuery();
+
+                if (rs.next()) {
+                    return mapUser(rs);
+                }
+            }
+
+            // 2) Se não existir, criar um novo utilizador
+            String username = (email != null && !email.isBlank())
+                    ? email
+                    : ("user_" + firebaseUid.substring(0, Math.min(8, firebaseUid.length())));
+
+            try (PreparedStatement insertStmt = conn.prepareStatement(
+                    "INSERT INTO users (username, email, role, firebase_uid) VALUES (?, ?, ?, ?)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+
+                insertStmt.setString(1, username);
+                insertStmt.setString(2, email != null ? email : "");
+                insertStmt.setString(3, "user"); // role padrão
+                insertStmt.setString(4, firebaseUid);
+
+                int affected = insertStmt.executeUpdate();
+                if (affected == 0) {
+                    throw new SQLException("Creating user failed, no rows affected.");
+                }
+
+                try (ResultSet generatedKeys = insertStmt.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        long newId = generatedKeys.getLong(1);
+                        // Buscar o registo completo
+                        try (PreparedStatement selectStmt = conn.prepareStatement(
+                                "SELECT id, username, role, email, created_at, firebase_uid FROM users WHERE id = ?")) {
+                            selectStmt.setLong(1, newId);
+                            ResultSet rs = selectStmt.executeQuery();
+                            if (rs.next()) {
+                                return mapUser(rs);
+                            }
+                        }
+                    } else {
+                        throw new SQLException("Creating user failed, no ID obtained.");
+                    }
+                }
             }
         }
         return null;
     }
 
-    public boolean register(String username, String password, String email) throws SQLException {
-        try (Connection conn = DbConfig.getMariaDB();
-             PreparedStatement stmt = conn.prepareStatement(
-                     "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)")) {
-
-            stmt.setString(1, username);
-            stmt.setString(2, password);
-            stmt.setString(3, email != null ? email : "");
-            stmt.setString(4, "user"); // Default role
-
-            return stmt.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            if (e.getMessage().contains("Duplicate")) {
-                return false;
-            }
-            throw e;
+    /**
+     * Obtém utilizador interno a partir do firebaseUid.
+     */
+    public Map<String, Object> getUserByFirebaseUid(String firebaseUid) throws SQLException {
+        if (firebaseUid == null || firebaseUid.isBlank()) {
+            return null;
         }
-    }
-
-    public boolean changePassword(String username, String oldPassword, String newPassword) throws SQLException {
-        try (Connection conn = DbConfig.getMariaDB();
-             PreparedStatement checkStmt = conn.prepareStatement(
-                     "SELECT id FROM users WHERE username = ? AND password = ?");
-             PreparedStatement updateStmt = conn.prepareStatement(
-                     "UPDATE users SET password = ? WHERE username = ? AND password = ?")) {
-
-            // Verificar senha antiga
-            checkStmt.setString(1, username);
-            checkStmt.setString(2, oldPassword);
-            ResultSet rs = checkStmt.executeQuery();
-
-            if (!rs.next()) {
-                return false; // Senha antiga incorreta
-            }
-
-            // Atualizar senha
-            updateStmt.setString(1, newPassword);
-            updateStmt.setString(2, username);
-            updateStmt.setString(3, oldPassword);
-
-            return updateStmt.executeUpdate() > 0;
-        }
-    }
-
-    public boolean resetPassword(String email) throws SQLException {
-        // Em produção: enviar email com link de reset
-        // Por enquanto apenas log
-        System.out.println("Password reset requested for email: " + email);
-        return true;
-    }
-
-    public Map<String, Object> getUserByToken(String token) throws SQLException {
-        String username = JWTUtil.getUsername(token);
-        if (username == null) return null;
 
         try (Connection conn = DbConfig.getMariaDB();
              PreparedStatement stmt = conn.prepareStatement(
-                     "SELECT id, username, role, email, created_at FROM users WHERE username = ?")) {
+                     "SELECT id, username, role, email, created_at, firebase_uid FROM users WHERE firebase_uid = ?")) {
 
-            stmt.setString(1, username);
+            stmt.setString(1, firebaseUid);
             ResultSet rs = stmt.executeQuery();
 
             if (rs.next()) {
-                Map<String, Object> user = new HashMap<>();
-                user.put("id", rs.getInt("id"));
-                user.put("username", rs.getString("username"));
-                user.put("role", rs.getString("role"));
-                user.put("email", rs.getString("email"));
-                user.put("createdAt", rs.getTimestamp("created_at"));
-                return user;
+                return mapUser(rs);
             }
         }
         return null;
     }
+
+    /**
+     * Mapeia ResultSet -> Map<String, Object> com os campos principais do utilizador.
+     */
+    private Map<String, Object> mapUser(ResultSet rs) throws SQLException {
+        Map<String, Object> user = new HashMap<>();
+        user.put("id", rs.getInt("id"));
+        user.put("username", rs.getString("username"));
+        user.put("role", rs.getString("role"));
+        user.put("email", rs.getString("email"));
+        user.put("createdAt", rs.getTimestamp("created_at"));
+        // Se tiveres a coluna firebase_uid
+        try {
+            user.put("firebaseUid", rs.getString("firebase_uid"));
+        } catch (SQLException ignored) {
+            // coluna opcional
+        }
+        return user;
+    }
+
 }

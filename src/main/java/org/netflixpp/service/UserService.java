@@ -1,5 +1,6 @@
 package org.netflixpp.service;
 
+import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.netflixpp.config.DbConfig;
 import java.sql.*;
 import java.util.*;
@@ -32,7 +33,7 @@ public class UserService {
         return null;
     }
 
-    public boolean updateUserProfile(String username, Map<String, String> updates)
+    public boolean updateUserProfile(String username, @MonotonicNonNull Map<String, Object> updates)
             throws SQLException {
 
         if (updates.isEmpty()) return false;
